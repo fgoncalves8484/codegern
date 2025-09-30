@@ -1,0 +1,150 @@
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { LayoutDashboard, Wand2, Compass, LogOut, Loader, Clapperboard } from 'lucide-react';
+import Dashboard from './Dashboard';
+import Generator from './Generator';
+import Explore from './Explore';
+
+// Tipos
+export interface GeneratedVideo {
+  id: string;
+  prompt: string;
+  thumbnail_url: string;
+  video_url: string;
+  created_at: Date;
+  type: 'text' | 'frames' | 'ingredients';
+  views: number;
+  likes: number;
+  shares: number;
+  user_id: string;
+}
+export type AppTab = 'dashboard' | 'generate' | 'explore';
+
+const AppLayout: React.FC<{ user: SupabaseUser }> = ({ user }) => {
+  const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
+  const [videos, setVideos] = useState<GeneratedVideo[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchVideos = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from('videos')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching videos:', error);
+    } else {
+      setVideos(data as GeneratedVideo[]);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchVideos();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+  
+  const addVideo = (video: GeneratedVideo) => {
+    setVideos(prev => [video, ...prev]);
+    setActiveTab('explore');
+  }
+
+  const deleteVideo = async (id: string) => {
+    if (confirm('Tem certeza que deseja eliminar este vídeo?')) {
+      const { error } = await supabase.from('videos').delete().eq('id', id);
+      if (error) {
+        console.error('Error deleting video:', error);
+        alert('Erro ao eliminar o vídeo.');
+      } else {
+        setVideos(prev => prev.filter(video => video.id !== id));
+      }
+    }
+  };
+
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'generate', label: 'Gerar', icon: Wand2 },
+    { id: 'explore', label: 'Explorar', icon: Compass },
+  ];
+
+  const renderContent = () => {
+    if (isLoading) {
+      return <div className="flex items-center justify-center h-full"><Loader className="w-8 h-8 animate-spin text-purple-400" /></div>;
+    }
+    switch (activeTab) {
+      case 'dashboard': return <Dashboard videos={videos} />;
+      case 'generate': return <Generator user={user} onVideoGenerated={addVideo} />;
+      case 'explore': return <Explore videos={videos} onDeleteVideo={deleteVideo} />;
+      default: return null;
+    }
+  };
+  
+  const userAvatarUrl = user.user_metadata?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${user.email}`;
+
+  return (
+    <div className="min-h-screen bg-black text-white flex flex-col md:flex-row">
+      {/* Side Nav (Desktop) */}
+      <aside className="hidden md:flex flex-col w-64 bg-gray-900/50 border-r border-gray-800 p-4">
+        <div className="flex items-center space-x-2 mb-10">
+            <Clapperboard className="w-8 h-8 text-purple-400"/>
+            <h1 className="text-2xl font-bold">code<span className="text-purple-400">Gern</span></h1>
+        </div>
+        <nav className="flex-1 space-y-2">
+          {navItems.map(item => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as AppTab)}
+              className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-colors ${
+                activeTab === item.id ? 'bg-purple-600/50 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <item.icon className="w-5 h-5" />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="mt-auto">
+            <div className="flex items-center space-x-3 p-2 rounded-lg">
+                <img src={userAvatarUrl} alt="User Avatar" className="w-10 h-10 rounded-full" />
+                <div className="flex-1 overflow-hidden">
+                    <p className="text-sm font-semibold truncate">{user.user_metadata?.full_name || user.email}</p>
+                    <p className="text-xs text-gray-400 truncate">{user.email}</p>
+                </div>
+                <button onClick={handleLogout} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-gray-700">
+                    <LogOut className="w-5 h-5" />
+                </button>
+            </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto">
+        {renderContent()}
+      </main>
+
+      {/* Bottom Nav (Mobile) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-900/80 backdrop-blur-sm border-t border-gray-800 flex justify-around">
+        {navItems.map(item => (
+          <button
+            key={item.id}
+            onClick={() => setActiveTab(item.id as AppTab)}
+            className={`flex flex-col items-center justify-center p-3 w-full transition-colors ${
+              activeTab === item.id ? 'text-purple-400' : 'text-gray-400'
+            }`}
+          >
+            <item.icon className="w-6 h-6 mb-1" />
+            <span className="text-xs">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+};
+
+export default AppLayout;
